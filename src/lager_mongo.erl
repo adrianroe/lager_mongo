@@ -23,6 +23,7 @@
 	  level,
 	  db_name,
 	  db_pool,
+	  collection,
 	  server,
 	  tag}).
 
@@ -47,11 +48,10 @@
 init(Params) ->
     process_flag(trap_exit, true),
 
-    io:format(user, "Params ~p~n", [Params]),
-
     LogServer = config_val(log_server, Params, "127.0.0.1"),
     LogDB = config_val(log_database, Params, log),
     LogLevel = config_val(log_level, Params, debug),
+    Collection = config_val(collection, Params, lager_log),
     Tag = config_val(tag, Params, undefined),
     
     application:start(mongodb),
@@ -62,6 +62,7 @@ init(Params) ->
 		server = LogServer,
 		db_name = LogDB,
 		db_pool = Pool,
+		collection = Collection,
 		tag = Tag}}.
 
 handle_event({log, MsgLevel, {Date, Time}, 
@@ -69,6 +70,7 @@ handle_event({log, MsgLevel, {Date, Time},
 	     State = #state{level = LogLevel, 
 			    db_pool = Pool, 
 			    db_name = DB,
+			    collection = Collection,
 			    tag = Tag}) when MsgLevel =< LogLevel ->
     
     Entry = (parse_location(Location))#log{
@@ -82,7 +84,7 @@ handle_event({log, MsgLevel, {Date, Time},
 	{ok, Conn} ->
 	    mongo:do(unsafe, slave_ok, Conn, DB, 
 		     fun() ->
-			     mongo:insert(lager_log, Record)
+			     mongo:insert(Collection, Record)
 		     end);
 	_ ->
 	    ok
@@ -152,14 +154,12 @@ zip_value(Value) ->
 
 
 parse_location(Location) ->
-    io:format("Location ~p~n", [Location]),
     case string:tokens(Location, "@") of
 	[Pid] ->
 	    #log{pid = Pid};
 	[Pid, FileInfo] ->
 	    case string:tokens(FileInfo, ": ") of
 		[[Module], [Function], [Line]] ->
-		    io:format("M ~p~nF ~p~nL ~p~n", [Module, Function, Line]),
 		    #log{pid = Pid,
 			 module = Module,
 			 function = Function,
@@ -174,7 +174,6 @@ parse_location(Location) ->
 parse_datetime(Date, Time) ->
     [YY, MM, DD] = string:tokens(Date, "-"),
     [HH, MN, SS, Frac] = string:tokens(Time, ":."),
-    io:format(user, "YY ~p, MM ~p, DD ~p, HH ~p, MN ~p, SS ~p~n", [YY, MM, DD, HH, MN, SS]),
     EpochSecs = to_epoch_seconds({{list_to_integer(YY), list_to_integer(MM), list_to_integer(DD)},
 				  {list_to_integer(HH), list_to_integer(MN), list_to_integer(SS)}}),
     {EpochSecs div 1000000, EpochSecs rem 1000000, list_to_integer(Frac)}.
@@ -196,7 +195,10 @@ to_epoch_seconds(Datetime) ->
 test_() ->
     application:load(lager),
     application:set_env(lager, handlers, [{lager_console_backend, debug}, 
-					  {lager_mongo, [{log_database, adrian}, {tag, "my tag"}]}, 
+					  {lager_mongo, [{log_database, test_log_database}, 
+							 {tag, "my tag"},
+							 {log_level, info},
+							 {collection, test_collection}]}, 
 					  {lager_file_backend, 
 					   [{"error.log", error, 10485760, "$D0", 5},
 					    {"console.log", info, 10485760, "$D0", 5}]}]),

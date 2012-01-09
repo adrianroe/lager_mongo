@@ -1,0 +1,70 @@
+* Overview
+  This is a simple mongodb backend for [[https://github.com/basho/lager][Lager]]. It sends messages from lager to the configured mongodb server
+
+* Configuration
+  You can override the the following (defaults in brackets)
+  	+ mongo server ("127.0.0.1")
+	+ database and (the atom 'log')
+	+ log_level (the atom 'debug') - see lager documentation for allowable options
+        + tag (default 'undefined' - no tag entry written by default) - if present the 
+	  tag is added to all entries (for example to distinguish between entries from multiple clients).
+
+An example configuration is shown below:
+
+#+BEGIN_EXAMPLE
+{lager_mongo, [{log_database, test_log_database}, 
+               {tag, "my tag"},
+	       {log_level, info},
+	       {collection, test_collection}]}, 
+#+END_EXAMPLE
+
+... and sample mongo output below.  Note how the back end tries to break out file/function/line number 
+for entries with parse_transform information in them.  This is likely to be fragile!
+
+#+BEGIN_EXAMPLE
+> db.test_collection.find().toArray()
+[
+	{
+		"_id" : ObjectId("4f0abb4e4fcf890bb9000009"),
+		"datetime" : ISODate("2012-01-09T10:02:54Z"),
+		"level" : 6,
+		"tag" : "my tag",
+		"pid" : "<0.32.0> ",
+		"message" : "Test INFO message"
+	},
+	{
+		"_id" : ObjectId("4f0abb4e4fcf890bb900000a"),
+		"datetime" : ISODate("2012-01-09T10:02:54Z"),
+		"level" : 3,
+		"tag" : "my tag",
+		"pid" : "<0.32.0> ",
+		"message" : "Test ERROR message"
+	},
+	{
+		"_id" : ObjectId("4f0abb4e4fcf890bb900000b"),
+		"datetime" : ISODate("2012-01-09T10:02:54Z"),
+		"level" : 4,
+		"tag" : "my tag",
+		"pid" : "<0.32.0>",
+		"module" : "lager_mongo",
+		"function" : "test_",
+		"line" : 215,
+		"message" : "Hello"
+	},
+	{
+		"_id" : ObjectId("4f0abb4e4fcf890bb900000c"),
+		"datetime" : ISODate("2012-01-09T10:02:54Z"),
+		"level" : 6,
+		"tag" : "my tag",
+		"pid" : "<0.32.0>",
+		"module" : "lager_mongo",
+		"function" : "test_",
+		"line" : 216,
+		"message" : "Info \"variable\""
+	}
+]
+#+END_EXAMPLE
+
+  Refer to Lager's documentation for futher information on configuring handlers.
+
+
