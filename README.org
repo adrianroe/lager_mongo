@@ -1,70 +1,166 @@
 * Overview
-  This is a simple mongodb backend for [[https://github.com/basho/lager][Lager]]. It sends messages from lager to the configured mongodb server
-
+  This is a simple mongodb backend for [[https://github.com/basho/lager][Lager]]. It sends messages from lager to the 
+  configured mongodb server.  In order to minimises delays due to logging DB writes 
+  are 'unsafe_ok' (no wait for confirmation that the write succeded).
+  
 * Configuration
   You can override the the following (defaults in brackets)
   	+ mongo server ("127.0.0.1")
-	+ database and (the atom 'log')
+	+ database (the atom 'log')
 	+ log_level (the atom 'debug') - see lager documentation for allowable options
-        + tag (default 'undefined' - no tag entry written by default) - if present the 
-	  tag is added to all entries (for example to distinguish between entries from multiple clients).
+        + node (default 'true') - if true each log has an entry of node() added, if false 
+	  no entry is written, if any other value, it is passed through unchanged (somewhat like tag)
+        + tag (default 'undefined' - no tag entry written by default) - if present the tag 
+	  is added to all entries (for example to distinguish between entries from multiple clients).
 
-An example configuration is shown below:
+The configuration is read at start-up from the lager backend configuration, an example of which is shown below:
 
 #+BEGIN_EXAMPLE
 {lager_mongo, [{log_database, test_log_database}, 
                {tag, "my tag"},
+	       {node, false},
 	       {log_level, info},
 	       {collection, test_collection}]}, 
 #+END_EXAMPLE
 
-... and sample mongo output below.  Note how the back end tries to break out file/function/line number 
-for entries with parse_transform information in them.  This is likely to be fragile!
+You can also change config once the backend is loaded (for example to change tag data once the system is up and running).  
+This is done by calling lager_mongo:update_params([...list of param data]). Note that this does not presently cause a new connection
+to the mongo server to be created, so changes to mongo server data are ignored - database and collection changes are processed.
+
+Below is sample mongo output (from running the test within the module).  The back end tries to break out file/function/line number 
+for entries with parse_transform information in them.  This is likely to be fragile!  If it can't parse 
+what it get it slaps whatever data it has into the "pid" field (as in the first two entries).
 
 #+BEGIN_EXAMPLE
 > db.test_collection.find().toArray()
 [
 	{
-		"_id" : ObjectId("4f0abb4e4fcf890bb9000009"),
-		"datetime" : ISODate("2012-01-09T10:02:54Z"),
+		"_id" : ObjectId("4f2074a34fcf89192b000001"),
+		"datetime" : ISODate("2012-01-25T21:31:15Z"),
+		"level" : 7,
+		"tag" : "my tag",
+		"pid" : "<0.43.0>",
+		"message" : "Lager installed handler lager_mongo into lager_event"
+	},
+	{
+		"_id" : ObjectId("4f2074a34fcf89192b000002"),
+		"datetime" : ISODate("2012-01-25T21:31:15Z"),
+		"level" : 7,
+		"tag" : "my tag",
+		"pid" : "<0.52.0>",
+		"message" : "Lager installed handler {lager_file_backend,\"error.log\"} into lager_event"
+	},
+	{
+		"_id" : ObjectId("4f2074a34fcf89192b000003"),
+		"datetime" : ISODate("2012-01-25T21:31:15Z"),
+		"level" : 7,
+		"tag" : "my tag",
+		"pid" : "<0.53.0>",
+		"message" : "Lager installed handler {lager_file_backend,\"console.log\"} into lager_event"
+	},
+	{
+		"_id" : ObjectId("4f2074a34fcf89192b000004"),
+		"datetime" : ISODate("2012-01-25T21:31:15Z"),
 		"level" : 6,
 		"tag" : "my tag",
-		"pid" : "<0.32.0> ",
+		"pid" : "<0.32.0>",
 		"message" : "Test INFO message"
 	},
 	{
-		"_id" : ObjectId("4f0abb4e4fcf890bb900000a"),
-		"datetime" : ISODate("2012-01-09T10:02:54Z"),
-		"level" : 3,
+		"_id" : ObjectId("4f2074a34fcf89192b000005"),
+		"datetime" : ISODate("2012-01-25T21:31:15Z"),
+		"level" : 7,
 		"tag" : "my tag",
-		"pid" : "<0.32.0> ",
+		"pid" : "<0.32.0>",
+		"message" : "Test DEBUG message"
+	},
+	{
+		"_id" : ObjectId("4f2074a34fcf89192b000006"),
+		"datetime" : ISODate("2012-01-25T21:31:15Z"),
+		"level" : 3,
+		"tag" : "Updated tag",
+		"pid" : "<0.32.0>",
+		"node" : "nonode@nohost",
 		"message" : "Test ERROR message"
 	},
 	{
-		"_id" : ObjectId("4f0abb4e4fcf890bb900000b"),
-		"datetime" : ISODate("2012-01-09T10:02:54Z"),
+		"_id" : ObjectId("4f2074a34fcf89192b000007"),
+		"datetime" : ISODate("2012-01-25T21:31:15Z"),
 		"level" : 4,
-		"tag" : "my tag",
+		"tag" : "Updated tag",
 		"pid" : "<0.32.0>",
 		"module" : "lager_mongo",
 		"function" : "test_",
-		"line" : 215,
+		"line" : 264,
+		"node" : "nonode@nohost",
 		"message" : "Hello"
 	},
 	{
-		"_id" : ObjectId("4f0abb4e4fcf890bb900000c"),
-		"datetime" : ISODate("2012-01-09T10:02:54Z"),
+		"_id" : ObjectId("4f2074a34fcf89192b000008"),
+		"datetime" : ISODate("2012-01-25T21:31:15Z"),
 		"level" : 6,
-		"tag" : "my tag",
+		"tag" : "Updated tag",
 		"pid" : "<0.32.0>",
 		"module" : "lager_mongo",
 		"function" : "test_",
-		"line" : 216,
+		"line" : 265,
+		"node" : "nonode@nohost",
+		"message" : "Info \"variable\""
+	},
+	{
+		"_id" : ObjectId("4f2075334fcf89192b000009"),
+		"datetime" : ISODate("2012-01-25T21:33:39Z"),
+		"level" : 6,
+		"tag" : "Updated tag",
+		"pid" : "<0.32.0>",
+		"node" : "nonode@nohost",
+		"message" : "Test INFO message"
+	},
+	{
+		"_id" : ObjectId("4f2075334fcf89192b00000a"),
+		"datetime" : ISODate("2012-01-25T21:33:39Z"),
+		"level" : 7,
+		"tag" : "Updated tag",
+		"pid" : "<0.32.0>",
+		"node" : "nonode@nohost",
+		"message" : "Test DEBUG message"
+	},
+	{
+		"_id" : ObjectId("4f2075334fcf89192b00000b"),
+		"datetime" : ISODate("2012-01-25T21:33:39Z"),
+		"level" : 3,
+		"tag" : "Updated tag",
+		"pid" : "<0.32.0>",
+		"node" : "nonode@nohost",
+		"message" : "Test ERROR message"
+	},
+	{
+		"_id" : ObjectId("4f2075334fcf89192b00000c"),
+		"datetime" : ISODate("2012-01-25T21:33:39Z"),
+		"level" : 4,
+		"tag" : "Updated tag",
+		"pid" : "<0.32.0>",
+		"module" : "lager_mongo",
+		"function" : "test_",
+		"line" : 259,
+		"node" : "nonode@nohost",
+		"message" : "Hello"
+	},
+	{
+		"_id" : ObjectId("4f2075334fcf89192b00000d"),
+		"datetime" : ISODate("2012-01-25T21:33:39Z"),
+		"level" : 6,
+		"tag" : "Updated tag",
+		"pid" : "<0.32.0>",
+		"module" : "lager_mongo",
+		"function" : "test_",
+		"line" : 260,
+		"node" : "nonode@nohost",
 		"message" : "Info \"variable\""
 	}
 ]
+
 #+END_EXAMPLE
 
-  Refer to Lager's documentation for futher information on configuring handlers.
-
+Refer to Lager's documentation for futher information on configuring handlers.
 

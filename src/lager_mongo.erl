@@ -13,18 +13,22 @@
 	 handle_call/2, 
 	 handle_info/2, 
 	 terminate/2, 
-	 code_change/3,
+	 code_change/3]).
+
+%% API
+-export([update_params/1,
 	 test_/0]).
 
 -define(SERVER, ?MODULE). 
 -define(SECONDS_TO_EPOCH, 62167219200). %% calendar:datetime_to_gregorian_seconds({{1970,1,1},{0,0,0}})
 
 -record(state, {
-	  level,
-	  db_name,
+	  level = info,
+	  db_name = log,
 	  db_pool,
-	  collection,
-	  server,
+	  collection = lager_log,
+	  server ="127.0.0.1",
+	  node = true,
 	  tag}).
 
 -record(log, {datetime, 
@@ -35,6 +39,7 @@
 	      module,
 	      function,
 	      line,
+	      node,
 	      message}).
 
 -define(RECORDS, [
@@ -42,28 +47,32 @@
 		 ]).
 
 
+
+%%%===================================================================
+%%% API
+%%%===================================================================
+update_params(Params) ->
+    case whereis(lager_event) of
+        undefined ->
+            %% lager isn't running
+            {error, lager_not_running};
+        Pid ->
+            gen_event:notify(Pid, {lager_mongo_options, Params})
+    end.    
+
 %%%===================================================================
 %%% gen_event callbacks
 %%%===================================================================
 init(Params) ->
     process_flag(trap_exit, true),
 
-    LogServer = config_val(log_server, Params, "127.0.0.1"),
-    LogDB = config_val(log_database, Params, log),
-    LogLevel = config_val(log_level, Params, debug),
-    Collection = config_val(collection, Params, lager_log),
-    Tag = config_val(tag, Params, undefined),
-    
+
+    State = state_from_params(#state{}, Params),
+
     application:start(mongodb),
+    Pool = resource_pool:new(mongo:connect_factory(State#state.server), 1),
 
-    Pool = resource_pool:new(mongo:connect_factory(LogServer), 1),
-
-    {ok, #state{level = lager_util:level_to_num(LogLevel),
-		server = LogServer,
-		db_name = LogDB,
-		db_pool = Pool,
-		collection = Collection,
-		tag = Tag}}.
+    {ok, State#state{db_pool = Pool}}.
 
 handle_event({log, MsgLevel, {Date, Time}, 
 	      [_LevelStr, Location, Message]}, 
@@ -71,12 +80,15 @@ handle_event({log, MsgLevel, {Date, Time},
 			    db_pool = Pool, 
 			    db_name = DB,
 			    collection = Collection,
+			    node = NodeName,
 			    tag = Tag}) when MsgLevel =< LogLevel ->
     
+
     Entry = (parse_location(Location))#log{
 	      datetime = parse_datetime(lists:flatten(Date), lists:flatten(Time)),
 	      level = MsgLevel,
 	      message = Message,
+	      node = NodeName,
 	      tag = Tag},
 
     Record = map_to_db(Entry, ?RECORDS),
@@ -91,7 +103,10 @@ handle_event({log, MsgLevel, {Date, Time},
     end,
     {ok, State};
 
-handle_event(_, State) ->
+handle_event({lager_mongo_options, Params}, State) ->
+    {ok, state_from_params(State, Params)};
+
+handle_event(X, State) ->
     {ok, State}.
 
 %%--------------------------------------------------------------------
@@ -156,7 +171,7 @@ zip_value(Value) ->
 parse_location(Location) ->
     case string:tokens(Location, "@") of
 	[Pid] ->
-	    #log{pid = Pid};
+	    #log{pid = string:strip(Pid)};
 	[Pid, FileInfo] ->
 	    case string:tokens(FileInfo, ": ") of
 		[[Module], [Function], [Line]] ->
@@ -183,6 +198,38 @@ parse_datetime(Date, Time) ->
 to_epoch_seconds(Datetime) ->
     calendar:datetime_to_gregorian_seconds(Datetime) - ?SECONDS_TO_EPOCH.
 
+
+state_from_params(OrgState = #state{server = OldServer,
+				    level = OldLevel,
+				    db_name = OldDatabase,
+				    collection = OldCollection,
+				    node = OldNode,
+				    tag = OldTag}, Params) ->
+    LogServer = config_val(log_server, Params, OldServer),
+    LogDB = config_val(log_database, Params, OldDatabase),
+    LogLevel = config_val(log_level, Params, OldLevel),
+    Collection = config_val(collection, Params, OldCollection),
+    Node = config_val(node, Params, OldNode),
+    Tag = config_val(tag, Params, OldTag),
+   
+    LogLevelNum = case is_atom(LogLevel) of
+		      true -> lager_util:level_to_num(LogLevel);
+		      _ -> LogLevel
+		  end,
+    NodeName = case Node of
+		   true -> 
+		       node();
+		   false ->
+		       undefined;
+		   Name ->
+		       Name
+	       end,
+    OrgState#state{level = LogLevelNum,
+		   server = LogServer,
+		   db_name = LogDB,
+		   collection = Collection,
+		   node = NodeName,
+		   tag = Tag}.
 		    
 
 %%--------------------------------------------------------------------
@@ -197,7 +244,8 @@ test_() ->
     application:set_env(lager, handlers, [{lager_console_backend, debug}, 
 					  {lager_mongo, [{log_database, test_log_database}, 
 							 {tag, "my tag"},
-							 {log_level, info},
+							 {node, false},
+							 {log_level, debug},
 							 {collection, test_collection}]}, 
 					  {lager_file_backend, 
 					   [{"error.log", error, 10485760, "$D0", 5},
@@ -206,6 +254,7 @@ test_() ->
     application:start(lager),
     lager:log(info, self(), "Test INFO message"),
     lager:log(debug, self(), "Test DEBUG message"),
+    lager_mongo:update_params([{tag, "Updated tag"}, {node, true}]),
     lager:log(error, self(), "Test ERROR message"),
     lager:warning([{a,b}, {c,d}], "Hello", []),
     lager:info("Info ~p", ["variable"]).
