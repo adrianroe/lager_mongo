@@ -106,7 +106,7 @@ handle_event({log, MsgLevel, {Date, Time},
 handle_event({lager_mongo_options, Params}, State) ->
     {ok, state_from_params(State, Params)};
 
-handle_event(X, State) ->
+handle_event(_X, State) ->
     {ok, State}.
 
 %%--------------------------------------------------------------------
